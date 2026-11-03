@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Anguis-L/kanjian/schemas/scene-result.schema.json",
+  "title": "SceneResult",
+  "description": "Kanjian 结构化场景理解结果。刻意不设 safe_to_walk / recommended_direction / distance_m / risk_level 字段：下游不得把不存在的字段当成可依赖事实。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "scene_summary",
+    "objects",
+    "text_regions",
+    "uncertainties",
+    "image_quality",
+    "speech_candidate",
+    "provider"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 64
+    },
+    "scene_summary": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "objects": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "zone", "confidence"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "zone": {
+            "type": "string",
+            "enum": ["front", "front_left", "front_right", "left", "right", "unknown"]
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "unknown"],
+            "description": "定性档位，不是未经验证的概率。"
+          },
+          "count_visible": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "可见个体数，不表示场景总数。"
+          }
+        }
+      }
+    },
+    "text_regions": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text"],
+        "properties": {
+          "text": { "type": "string", "maxLength": 300 },
+          "legible": { "type": "boolean" },
+          "note": { "type": "string", "maxLength": 100 }
+        }
+      }
+    },
+    "uncertainties": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string", "maxLength": 100 }
+    },
+    "image_quality": {
+      "type": "string",
+      "enum": ["good", "acceptable", "poor", "unknown"]
+    },
+    "speech_candidate": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "候选播报文本。必须经端侧 OutputPolicyEngine 复核，不得因字段名而豁免。"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 60 },
+        "model_version": { "type": "string", "maxLength": 60 }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": { "type": ["integer", "null"] },
+        "output_tokens": { "type": ["integer", "null"] },
+        "latency_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

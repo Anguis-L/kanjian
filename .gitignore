@@ -1,0 +1,41 @@
+# 源与构建产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 环境与密钥：绝不提交
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# 本地数据与日志（不应存在的图像/音频也会被这条挡住）
+*.log
+logs/
+data/
+*.jpg
+*.jpeg
+*.png
+*.wav
+*.mp3
+!docs/**/*.png
+!docs/**/*.svg
+
+# 覆盖率
+.coverage
+htmlcov/
+
+# 编辑器/系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

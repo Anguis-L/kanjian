@@ -1,0 +1,19 @@
+# 文档许可
+
+本仓库 `docs/` 目录下的所有文档（包括设计文档、模型卡、数据卡）采用
+**Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)** 许可。
+
+- 许可证全文：<https://creativecommons.org/licenses/by-sa/4.0/legalcode>
+- 人类可读摘要：<https://creativecommons.org/licenses/by-sa/4.0/>
+
+你可以自由地共享与改编，条件是：
+
+1. **署名** — 注明来源为 Kanjian 项目并附链接
+2. **相同方式共享** — 衍生作品须以相同许可证发布
+
+注意：**根目录的软件代码采用 Apache-2.0，与本目录文档的许可不同。** 两者边界为：
+
+- `docs/**` → CC BY-SA 4.0
+- 其余代码与脚本 → Apache-2.0
+
+名称与标识不随上述任一许可证授权，见 [../TRADEMARK.md](../TRADEMARK.md)。

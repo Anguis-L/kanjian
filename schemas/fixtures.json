@@ -1,0 +1,233 @@
+{
+  "_comment": "Kanjian 契约正反例。Android 与 gateway 必须验证同一组样本，防止两端 Schema 漂移（TDD §14）。valid 项必须通过，invalid 项必须以指定 reason 被拒。",
+
+  "scene_request": {
+    "valid": [
+      {
+        "case": "user_ask_zh",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-ask-0001",
+          "session_id": "sess-a1b2c3",
+          "frame_timestamp_ms": 1793500000000,
+          "origin": "USER",
+          "mode": "ASK",
+          "locale": "zh-CN",
+          "max_speech_chars": 40,
+          "policy_version": "2026-11-01",
+          "query": "前面是什么"
+        }
+      },
+      {
+        "case": "auto_minimal",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-auto-0001",
+          "session_id": "sess-a1b2c3",
+          "frame_timestamp_ms": 1793500001000,
+          "origin": "AUTO",
+          "mode": "AUTO",
+          "locale": "zh-CN",
+          "max_speech_chars": 40,
+          "policy_version": "2026-11-01"
+        }
+      },
+      {
+        "case": "ocr_mode",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-ocr-0001",
+          "session_id": "sess-a1b2c3",
+          "frame_timestamp_ms": 1793500002000,
+          "origin": "USER",
+          "mode": "OCR",
+          "locale": "zh-CN",
+          "max_speech_chars": 60,
+          "policy_version": "2026-11-01",
+          "query": "帮我读这个牌子"
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "case": "missing_policy_version",
+        "reason": "required",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-bad-0001",
+          "session_id": "sess-a1b2c3",
+          "frame_timestamp_ms": 1793500000000,
+          "origin": "USER",
+          "mode": "ASK",
+          "locale": "zh-CN",
+          "max_speech_chars": 40
+        }
+      },
+      {
+        "case": "gps_leak",
+        "reason": "additionalProperties",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-bad-0002",
+          "session_id": "sess-a1b2c3",
+          "frame_timestamp_ms": 1793500000000,
+          "origin": "USER",
+          "mode": "ASK",
+          "locale": "zh-CN",
+          "max_speech_chars": 40,
+          "policy_version": "2026-11-01",
+          "gps": { "lat": 31.2, "lon": 121.5 }
+        }
+      },
+      {
+        "case": "speech_chars_out_of_range",
+        "reason": "maximum",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-bad-0003",
+          "session_id": "sess-a1b2c3",
+          "frame_timestamp_ms": 1793500000000,
+          "origin": "USER",
+          "mode": "ASK",
+          "locale": "zh-CN",
+          "max_speech_chars": 400,
+          "policy_version": "2026-11-01"
+        }
+      },
+      {
+        "case": "bad_origin_enum",
+        "reason": "enum",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-bad-0004",
+          "session_id": "sess-a1b2c3",
+          "frame_timestamp_ms": 1793500000000,
+          "origin": "SYSTEM",
+          "mode": "ASK",
+          "locale": "zh-CN",
+          "max_speech_chars": 40,
+          "policy_version": "2026-11-01"
+        }
+      }
+    ]
+  },
+
+  "scene_result": {
+    "valid": [
+      {
+        "case": "corridor_with_chair",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-ask-0001",
+          "scene_summary": "像是一条室内走廊",
+          "objects": [
+            { "label": "椅子", "zone": "front", "confidence": "medium", "count_visible": 1 },
+            { "label": "门", "zone": "left", "confidence": "low", "count_visible": 1 }
+          ],
+          "text_regions": [],
+          "uncertainties": ["左侧物体轮廓不完整"],
+          "image_quality": "acceptable",
+          "speech_candidate": "像是一条走廊，正前方有椅子，左侧可能有门。",
+          "provider": { "name": "fake", "model_version": "fixture-v1" },
+          "usage": { "input_tokens": null, "output_tokens": null, "latency_ms": 0 }
+        }
+      },
+      {
+        "case": "empty_scene_all_unknown",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-auto-0001",
+          "scene_summary": "画面较暗，看不清具体内容",
+          "objects": [],
+          "text_regions": [],
+          "uncertainties": ["画面过暗", "无法确认物体"],
+          "image_quality": "poor",
+          "speech_candidate": "画面太暗，看不清。",
+          "provider": { "name": "fake" }
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "case": "dangerous_field_safe_to_walk",
+        "reason": "additionalProperties",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-bad-1001",
+          "scene_summary": "走廊",
+          "objects": [],
+          "text_regions": [],
+          "uncertainties": [],
+          "image_quality": "good",
+          "speech_candidate": "可以走。",
+          "provider": { "name": "fake" },
+          "safe_to_walk": true
+        }
+      },
+      {
+        "case": "dangerous_field_distance_m",
+        "reason": "additionalProperties",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-bad-1002",
+          "scene_summary": "前方有物体",
+          "objects": [],
+          "text_regions": [],
+          "uncertainties": [],
+          "image_quality": "good",
+          "speech_candidate": "前方两米有物体。",
+          "provider": { "name": "fake" },
+          "distance_m": 2.3
+        }
+      },
+      {
+        "case": "bad_zone_enum",
+        "reason": "enum",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-bad-1003",
+          "scene_summary": "走廊",
+          "objects": [
+            { "label": "椅子", "zone": "north", "confidence": "medium" }
+          ],
+          "text_regions": [],
+          "uncertainties": [],
+          "image_quality": "good",
+          "speech_candidate": "正前方有椅子。",
+          "provider": { "name": "fake" }
+        }
+      },
+      {
+        "case": "probability_confidence",
+        "reason": "enum",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-bad-1004",
+          "scene_summary": "走廊",
+          "objects": [
+            { "label": "椅子", "zone": "front", "confidence": "0.82" }
+          ],
+          "text_regions": [],
+          "uncertainties": [],
+          "image_quality": "good",
+          "speech_candidate": "正前方有椅子。",
+          "provider": { "name": "fake" }
+        }
+      },
+      {
+        "case": "missing_speech_candidate",
+        "reason": "required",
+        "value": {
+          "schema_version": "1.0",
+          "request_id": "req-bad-1005",
+          "scene_summary": "走廊",
+          "objects": [],
+          "text_regions": [],
+          "uncertainties": [],
+          "image_quality": "good",
+          "provider": { "name": "fake" }
+        }
+      }
+    ]
+  }
+}
