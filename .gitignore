@@ -13,6 +13,8 @@ dist/
 # 环境与密钥：绝不提交
 .env
 .env.*
+# 但配置模板必须进仓库，否则新人不知道要配什么
+!.env.example
 *.key
 *.pem
 secrets.json
