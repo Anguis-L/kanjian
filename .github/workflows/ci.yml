@@ -35,7 +35,7 @@ jobs:
       - name: Full suite
         run: pytest -q
 
-      - name: End-to-end demo
+      - name: End-to-end demo (Fake provider, offline)
         run: python examples/demo.py --no-color
 
   guards:
@@ -43,61 +43,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 禁止危险字段进入 SceneResult schema
-        run: |
-          python - <<'PY'
-          import json, pathlib, sys
-          schema = json.loads(pathlib.Path("schemas/scene-result.schema.json").read_text(encoding="utf-8"))
-          forbidden = {"safe_to_walk", "recommended_direction", "distance_m", "risk_level", "can_pass", "is_safe"}
-          hit = set(schema["properties"]) & forbidden
-          if hit:
-              print(f"::error::SceneResult 出现危险字段: {hit}")
-              sys.exit(1)
-          if schema.get("additionalProperties") is not False:
-              print("::error::SceneResult 必须 additionalProperties: false")
-              sys.exit(1)
-          print("OK: SceneResult 无危险字段")
-          PY
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: 禁止默认云端端点进入代码
-        run: |
-          python - <<'PY'
-          import pathlib, re, sys
-          # 只扫描源码，排除文档与测试
-          bad = []
-          for p in pathlib.Path(".").rglob("*.py"):
-              if ".venv" in p.parts or "tests" in p.parts:
-                  continue
-              text = p.read_text(encoding="utf-8", errors="ignore")
-              for m in re.finditer(r'https?://[^\s"\'\)]+', text):
-                  url = m.group(0)
-                  if any(d in url for d in ("github.com", "apache.org", "json-schema.org", "localhost", "127.0.0.1", "your-endpoint")):
-                      continue
-                  bad.append(f"{p}: {url}")
-          if bad:
-              print("::error::疑似硬编码外部端点（ADR-07 禁止默认端点）")
-              for b in bad:
-                  print(f"  {b}")
-              sys.exit(1)
-          print("OK: 无硬编码默认端点")
-          PY
-
-      - name: 禁止图像/密钥入库
-        run: |
-          python - <<'PY'
-          import pathlib, sys
-          offenders = []
-          for p in pathlib.Path(".").rglob("*"):
-              if not p.is_file() or ".git" in p.parts or ".venv" in p.parts:
-                  continue
-              if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".wav", ".mp3", ".pem", ".key"}:
-                  if p.parts[0] == "docs":
-                      continue
-                  offenders.append(str(p))
-          if offenders:
-              print("::error::禁止提交图像/音频/密钥")
-              for o in offenders:
-                  print(f"  {o}")
-              sys.exit(1)
-          print("OK: 无图像/音频/密钥")
-          PY
+      # 守卫脚本用 AST 只扫真实字符串常量，不会误伤文档里的示例 URL。
+      # 它自己也有测试（tests/test_guards.py），保证"会真的报警"。
+      - name: 边界守卫（危险字段 / 默认端点 / 图像与密钥）
+        run: python scripts/check_guards.py
