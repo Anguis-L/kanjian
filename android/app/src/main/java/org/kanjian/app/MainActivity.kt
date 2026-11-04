@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnAsk: Button
     private lateinit var btnStop: Button
     private lateinit var btnRepeat: Button
+    private lateinit var btnSettings: Button
 
     private var imageCapture: ImageCapture? = null
     private var speech: SpeechOutput? = null
@@ -51,6 +52,11 @@ class MainActivity : AppCompatActivity() {
     private var lastSpoken: String? = null
 
     private val prefs by lazy { getSharedPreferences("kanjian", MODE_PRIVATE) }
+
+    private companion object {
+        const val KEY_ONBOARDING = "onboarding_done"
+        const val KEY_GATEWAY_URL = "gateway_url"
+    }
 
     private val requestPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -71,15 +77,29 @@ class MainActivity : AppCompatActivity() {
         btnAsk = findViewById(R.id.btnAsk)
         btnStop = findViewById(R.id.btnStop)
         btnRepeat = findViewById(R.id.btnRepeat)
+        btnSettings = findViewById(R.id.btnSettings)
 
         // FR-ONB-001：首次启动必须确认安全与隐私说明，不可仅小字链接
-        if (!prefs.getBoolean("onboarding_done", false)) {
+        if (!prefs.getBoolean(KEY_ONBOARDING, false)) {
             showOnboarding()
+        }
+
+        // 先建网关客户端：TTS 初始化是异步的，回调里会读 gateway 状态，
+        // 所以它必须在此之前就绪。
+        val url = currentGatewayUrl()
+        gateway = GatewayClient(url)
+        if (url.isBlank()) {
+            setStatus(getString(R.string.status_no_gateway))
         }
 
         speech = SpeechOutput(
             onReady = {
-                runOnUiThread { setStatus(getString(R.string.status_idle)) }
+                // 注意：TTS 就绪是异步的，晚于 onCreate。若无条件写"准备就绪"，
+                // 会把"未配置云端服务"这条更要紧的状态覆盖掉。
+                runOnUiThread {
+                    val configured = gateway?.isConfigured() == true
+                    if (configured) setStatus(getString(R.string.status_idle))
+                }
             },
             onFinished = {
                 runOnUiThread { setStatus(getString(R.string.status_idle)) }
@@ -99,20 +119,15 @@ class MainActivity : AppCompatActivity() {
             s.attach(engine)
         }
 
-        val url = BuildConfig.GATEWAY_URL
-        gateway = GatewayClient(url)
-        if (url.isBlank()) {
-            setStatus(getString(R.string.status_no_gateway))
-        }
-
         btnAsk.setOnClickListener { askOnce() }
         btnStop.setOnClickListener {
             speech?.stopNow()
             setStatus(getString(R.string.status_idle))
         }
         btnRepeat.setOnClickListener {
-            lastSpoken?.let { speak(it) } ?: toast("还没有可重复的描述")
+            lastSpoken?.let { speak(it) } ?: toast(getString(R.string.status_no_gateway))
         }
+        btnSettings.setOnClickListener { showSettings() }
 
         if (hasCameraPermission()) startCamera() else requestPermission.launch(Manifest.permission.CAMERA)
     }
@@ -125,7 +140,7 @@ class MainActivity : AppCompatActivity() {
             .setMessage(R.string.onboarding_body)
             .setCancelable(false)
             .setPositiveButton(R.string.onboarding_confirm) { _, _ ->
-                prefs.edit().putBoolean("onboarding_done", true).apply()
+                prefs.edit().putBoolean(KEY_ONBOARDING, true).apply()
             }
             .setNegativeButton(R.string.onboarding_exit) { _, _ -> finish() }
             .show()
@@ -154,11 +169,70 @@ class MainActivity : AppCompatActivity() {
                 provider.bindToLifecycle(
                     this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture
                 )
-                setStatus(getString(R.string.status_idle))
+                // 只有在**云端已配置**时才写"准备就绪"，
+                // 否则会盖掉"未配置云端服务"——那才是用户此刻最需要知道的。
+                if (gateway?.isConfigured() == true) {
+                    setStatus(getString(R.string.status_idle))
+                }
             } catch (e: ExecutionException) {
                 setStatus(getString(R.string.err_camera))
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    // ---------------------------------------------------------------- 服务地址
+
+    /**
+     * 当前网关地址。
+     *
+     * 优先级：用户在设置里填的 > 构建时注入的（BuildConfig.GATEWAY_URL）。
+     * **两者都没有时就是空**——本项目不提供任何默认端点（ADR-07），
+     * 绝不会退回到某个维护者地址。
+     */
+    private fun currentGatewayUrl(): String =
+        prefs.getString(KEY_GATEWAY_URL, null)?.takeIf { it.isNotBlank() }
+            ?: BuildConfig.GATEWAY_URL
+
+    private fun showSettings() {
+        val input = android.widget.EditText(this).apply {
+            setText(currentGatewayUrl())
+            hint = getString(R.string.settings_hint)
+            setSingleLine()
+            contentDescription = getString(R.string.settings_title)
+        }
+        val wrapper = android.widget.FrameLayout(this).apply {
+            setPadding(48, 24, 48, 0)
+            addView(input)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_title)
+            .setMessage(R.string.settings_help)
+            .setView(wrapper)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val url = input.text.toString().trim().trimEnd('/')
+                if (url.isEmpty()) {
+                    prefs.edit().remove(KEY_GATEWAY_URL).apply()
+                    gateway = GatewayClient(currentGatewayUrl())
+                    setStatus(getString(R.string.status_no_gateway))
+                    return@setPositiveButton
+                }
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    toast(getString(R.string.settings_invalid))
+                    return@setPositiveButton
+                }
+                prefs.edit().putString(KEY_GATEWAY_URL, url).apply()
+                gateway = GatewayClient(url)
+                setStatus(getString(R.string.settings_saved))
+                speak(getString(R.string.settings_saved))
+            }
+            .setNeutralButton(R.string.settings_clear) { _, _ ->
+                prefs.edit().remove(KEY_GATEWAY_URL).apply()
+                gateway = GatewayClient(currentGatewayUrl())
+                setStatus(getString(R.string.status_no_gateway))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     // ---------------------------------------------------------------- 主流程
@@ -171,8 +245,10 @@ class MainActivity : AppCompatActivity() {
         }
         val client = gateway ?: return
         if (!client.isConfigured()) {
+            // 没配地址时直接引导去设置，而不是只报一句"未配置"
             setStatus(getString(R.string.status_no_gateway))
             speak(getString(R.string.status_no_gateway))
+            showSettings()
             return
         }
 

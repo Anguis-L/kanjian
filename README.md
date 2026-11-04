@@ -47,8 +47,8 @@ git clone https://github.com/Anguis-L/kanjian.git
 cd kanjian
 python -m venv .venv && .venv\Scripts\activate   # Windows
 pip install -e ".[dev]"
-pytest                                            # 133 个测试
-uvicorn gateway.app:app --port 8000               # Fake Provider，零网络
+pytest                                            # 161 个测试
+uvicorn gateway.app:app --host 0.0.0.0 --port 8000   # Fake Provider，零网络
 ```
 
 接你自己的 OpenAI 兼容端点（`base_url` 带不带 `/v1` 都可以）：
@@ -83,6 +83,20 @@ python scripts/live_injection_test.py     # 真实提示注入对抗
 **Android 端（M1 垂直切片，可编译可测）**：CameraX 预览与单帧拍摄 → 网关 → **端侧策略二次过滤** → 系统 TTS 播报；首次安全说明、大按钮与 TalkBack 语义、失败可感知。Kotlin 端与 Python 端共用同一组 37 条对抗样本。
 
 APK 构建与 SDK 安装见 [docs/ANDROID.md](docs/ANDROID.md)。**未经分级验证（G0–G4），不宣传任何出行能力。**
+
+## 试用 Android 版（侧载）
+
+从 [Releases](https://github.com/Anguis-L/kanjian/releases) 下载 `kanjian-*-debug.apk` 安装（需允许"安装未知来源应用"）。
+
+装好后**必须先在 App 内配置网关地址**（点「设置服务地址」）：
+
+1. 在电脑上启动网关，监听所有网卡：`uvicorn gateway.app:app --host 0.0.0.0 --port 8000`
+2. 手机与电脑连同一 Wi-Fi
+3. App 里填 `http://<电脑的局域网IP>:8000`，例如 `http://192.168.1.10:8000`
+
+App **不内置任何默认端点**，不填就只能看屏幕、无法识别。这是有意为之（ADR-07）：不把成本转嫁给维护者，也避免静默连到某个别人的服务器。
+
+> 这是原型包：用 debug 签名，非 Play 分发，含未完成功能，**不可用于真实出行**。
 
 ## 许可证
 

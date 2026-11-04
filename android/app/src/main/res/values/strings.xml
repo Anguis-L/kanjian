@@ -7,6 +7,16 @@
     <string name="ask_desc">拍摄一帧并描述周围环境</string>
     <string name="stop">停止播报</string>
     <string name="stop_desc">立即停止当前语音播报</string>
+    <string name="repeat">重复播放</string>
+    <string name="repeat_desc">重复上一次描述</string>
+    <string name="settings">设置服务地址</string>
+    <string name="settings_desc">设置云端识别服务的地址</string>
+    <string name="settings_title">云端识别服务地址</string>
+    <string name="settings_hint">http://192.168.1.10:8000</string>
+    <string name="settings_help">填入你自己部署的 Kanjian 网关地址（含 http:// 或 https://）。\n\n本项目不提供公共端点，不填则只能看屏幕、无法识别。\n\n网关在本机时：手机与电脑需在同一网络，并用电脑的局域网 IP。</string>
+    <string name="settings_saved">服务地址已保存</string>
+    <string name="settings_invalid">地址必须以 http:// 或 https:// 开头</string>
+    <string name="settings_clear">清除</string>
     <string name="status_idle">准备就绪</string>
     <string name="status_capturing">正在拍摄…</string>
     <string name="status_describing">正在识别…</string>
