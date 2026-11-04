@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">看见</string>
+
+    <!-- 主界面 -->
+    <string name="ask">询问前方</string>
+    <string name="ask_desc">拍摄一帧并描述周围环境</string>
+    <string name="stop">停止播报</string>
+    <string name="stop_desc">立即停止当前语音播报</string>
+    <string name="status_idle">准备就绪</string>
+    <string name="status_capturing">正在拍摄…</string>
+    <string name="status_describing">正在识别…</string>
+    <string name="status_speaking">正在播报</string>
+    <string name="status_no_gateway">未配置云端服务，仅本地可用</string>
+
+    <!-- 安全说明（FR-ONB：首次启动必须显示，不可仅小字链接） -->
+    <string name="onboarding_title">使用前请读</string>
+    <string name="onboarding_body">看见只是描述摄像头里的画面，不是导航或避障工具。\n\n它不会告诉你「能不能走」，也不替代盲杖、导盲犬或你自己的判断。\n\n默认不保存照片。云端能力需要你自己配置。</string>
+    <string name="onboarding_confirm">我已了解，开始使用</string>
+    <string name="onboarding_exit">退出</string>
+
+    <!-- 权限 -->
+    <string name="perm_needed">需要相机权限才能描述环境</string>
+    <string name="perm_grant">授予相机权限</string>
+
+    <!-- 状态与错误（PRD §8.1：失败要可感知，不静默编造） -->
+    <string name="err_offline">当前离线，无法云端识别</string>
+    <string name="err_timeout">识别超时，可重试</string>
+    <string name="err_service">服务暂不可用</string>
+    <string name="err_camera">相机不可用</string>
+</resources>

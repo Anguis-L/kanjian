@@ -52,3 +52,24 @@ jobs:
       # 它自己也有测试（tests/test_guards.py），保证"会真的报警"。
       - name: 边界守卫（危险字段 / 默认端点 / 图像与密钥）
         run: python scripts/check_guards.py
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # GitHub 托管的 runner 预装 Android SDK；用 ANDROID_HOME 定位，
+      # 不依赖提交 local.properties（它含本机绝对路径，已被 gitignore）。
+      - name: 单元测试（含与 Python 同源的对抗集）
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
+
+      - name: 构建 Debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon --console=plain

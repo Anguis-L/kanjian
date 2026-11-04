@@ -127,7 +127,15 @@ def _string_constants(tree: ast.AST) -> list[tuple[str, int]]:
 
 
 def check_hardcoded_endpoints(root: Path) -> list[str]:
+    """扫描 Python 与 Kotlin 源码中的硬编码端点。
+
+    Kotlin 侧尤其要查：Android 端才是用户真正安装的东西，
+    一个内置的默认网关地址比后端的默认端点更难被发现。
+    Python 用 AST（能精确跳过 docstring），Kotlin 用逐行正则
+    （注释与 KDoc 以 // 或 * 开头，直接跳过）。
+    """
     problems: list[str] = []
+
     for path in _iter_files(root, ".py"):
         rel = path.relative_to(root)
         if rel.parts and rel.parts[0] in {"tests"}:
@@ -144,6 +152,25 @@ def check_hardcoded_endpoints(root: Path) -> list[str]:
                 if any(marker in url for marker in ALLOWED_URL_MARKERS):
                     continue
                 problems.append(f"{rel}:{lineno} 疑似硬编码端点 {url}")
+
+    for path in _iter_files(root, ".kt"):
+        rel = path.relative_to(root)
+        if rel.parts and rel.parts[0] in {"tests", "test", "androidTest"}:
+            continue
+        if "src/test" in str(rel).replace("\\", "/") or "src/androidTest" in str(rel).replace("\\", "/"):
+            continue
+        for lineno, line in enumerate(
+            path.read_text(encoding="utf-8", errors="ignore").splitlines(), start=1
+        ):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            for m in _URL_RX.finditer(line):
+                url = m.group(0)
+                if any(marker in url for marker in ALLOWED_URL_MARKERS):
+                    continue
+                problems.append(f"{rel}:{lineno} 疑似硬编码端点 {url}")
+
     return problems
 
 

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  布局刻意简单：大按钮 + 状态文本。
+  视障用户主要靠 TalkBack 与语音，视觉预览不是必要操作依据（SDD §12）。
+  按钮顺序 = 任务顺序，便于 TalkBack 线性遍历。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/preview"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:contentDescription="@string/status_idle" />
+
+    <TextView
+        android:id="@+id/status"
+        style="@style/Kanjian.Status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:accessibilityLiveRegion="polite"
+        android:text="@string/status_idle" />
+
+    <Button
+        android:id="@+id/btnAsk"
+        style="@style/Kanjian.Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:contentDescription="@string/ask_desc"
+        android:text="@string/ask" />
+
+    <Button
+        android:id="@+id/btnStop"
+        style="@style/Kanjian.Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:contentDescription="@string/stop_desc"
+        android:text="@string/stop" />
+
+    <Button
+        android:id="@+id/btnRepeat"
+        style="@style/Kanjian.Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:contentDescription="重复上一次描述"
+        android:text="重复播放" />
+
+</LinearLayout>

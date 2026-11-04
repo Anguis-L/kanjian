@@ -41,3 +41,14 @@ htmlcov/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Android
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+*.apk
+*.aab
+*.keystore
+*.jks

@@ -76,7 +76,13 @@ python scripts/live_injection_test.py     # 真实提示注入对抗
 
 ## 当前状态
 
-原型阶段（M0→M1）。已完成：schemas 契约与正反例、OutputPolicyEngine（对抗集放行数 0）、TriggerEngine（冷却/滞回/降级）、BudgetGuard、SceneFingerprint、网关与双 Provider。进行中：Android 端。**未经分级验证（G0–G4），不宣传任何出行能力。**
+原型阶段（M0→M1）。
+
+**已完成**：schemas 契约与正反例、OutputPolicyEngine（对抗集放行数 0）、TriggerEngine（冷却/滞回/降级）、BudgetGuard、SceneFingerprint、网关与双 Provider。
+
+**Android 端（M1 垂直切片，可编译可测）**：CameraX 预览与单帧拍摄 → 网关 → **端侧策略二次过滤** → 系统 TTS 播报；首次安全说明、大按钮与 TalkBack 语义、失败可感知。Kotlin 端与 Python 端共用同一组 37 条对抗样本。
+
+APK 构建与 SDK 安装见 [docs/ANDROID.md](docs/ANDROID.md)。**未经分级验证（G0–G4），不宣传任何出行能力。**
 
 ## 许可证
 
