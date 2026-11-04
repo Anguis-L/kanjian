@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -36,6 +37,50 @@ class ProviderError(Exception):
         self.code = code
         self.message = message
         self.retryable = retryable
+
+
+def normalize_base_url(url: str) -> str:
+    """把用户填的端点归一化成 `<root>/v1` 形式，消除重复 /v1。
+
+    用户常直接粘贴 OpenAI 文档里的 ``https://host/v1``，也有人只填主机名。
+    两种都应能用，且绝不允许拼出 ``/v1/v1/chat/completions``。
+    """
+    root = url.strip().rstrip("/")
+    # 去掉可能已存在的末尾 /v1 或 /v1beta 等版本段，最后统一补一个 /v1
+    root = re.sub(r"/v1(beta\d*)?$", "", root)
+    return root + "/v1"
+
+
+def discover_vision_model(
+    base_url: str, api_key: str, *, timeout_s: float = 5.0
+) -> str:
+    """从端点自带的 /v1/models 里挑第一个支持图像输入的模型。
+
+    只在用户**没有**显式指定模型时使用；端点本身由用户提供，
+    所以这不构成"默认端点"（ADR-07）。
+    """
+    import httpx
+
+    root = normalize_base_url(base_url)
+    try:
+        with httpx.Client(timeout=timeout_s) as client:
+            resp = client.get(
+                f"{root}/models", headers={"Authorization": f"Bearer {api_key}"}
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data") or []
+    except Exception as exc:  # noqa: BLE001 - 发现失败要降级而非崩溃
+        raise ProviderError(
+            "PROVIDER_UNAVAILABLE", f"无法读取端点模型列表: {exc}", retryable=True
+        ) from exc
+
+    for item in data:
+        modalities = (item.get("modalities") or {}).get("input") or []
+        if "image" in modalities:
+            return str(item["id"])
+    raise ProviderError(
+        "PROVIDER_UNAVAILABLE", "该端点没有声明支持图像输入的模型"
+    )
 
 
 class VlmProvider(Protocol):
@@ -117,19 +162,32 @@ class OpenAICompatProvider:
     """任意 OpenAI 兼容端点（ADR-08）。
 
     用户自配 endpoint + key + model；项目不内置任何默认端点（ADR-07）。
+
+    base_url 的两种写法都接受：
+    - ``http://host:port/v1``   （OpenAI 官方风格，已含 /v1）
+    - ``http://host:port``      （裸主机名）
+    两者都归一化为 ``<root>/v1/chat/completions``，不会出现 ``/v1/v1/``。
     """
 
     base_url: str
     api_key: str
     model: str
     timeout_s: float = 6.0
+    max_tokens: int = 700
     _caps: ProviderCapabilities | None = None
+    _chat_url: str = ""
 
     def __post_init__(self) -> None:
         if not self.base_url:
             raise ValueError("base_url 不得为空：本项目不提供默认端点（ADR-07）")
         if not self.api_key:
             raise ValueError("api_key 不得为空")
+        if not self.model:
+            raise ValueError("model 不得为空")
+
+        root = normalize_base_url(self.base_url)
+        self.base_url = root
+        self._chat_url = f"{root}/chat/completions"
         self._caps = ProviderCapabilities(
             name=f"openai-compat:{self.model}",
             api_shape="openai_chat",
@@ -137,6 +195,11 @@ class OpenAICompatProvider:
             data_retention_policy_id="third_party_terms",
             estimated_price_table_id="user_configured",
         )
+
+    @property
+    def chat_url(self) -> str:
+        """实际调用的 completions 地址。暴露出来便于排错与测试。"""
+        return self._chat_url
 
     @property
     def capabilities(self) -> ProviderCapabilities:
@@ -172,6 +235,7 @@ class OpenAICompatProvider:
                 },
             ],
             "temperature": 0.2,
+            "max_tokens": self.max_tokens,
         }
         if schema is not None:
             payload["response_format"] = {
@@ -179,7 +243,7 @@ class OpenAICompatProvider:
                 "json_schema": {"name": "scene_result", "schema": schema, "strict": False},
             }
 
-        url = self.base_url.rstrip("/") + "/v1/chat/completions"
+        url = self._chat_url
         try:
             async with httpx.AsyncClient(timeout=self.timeout_s) as client:
                 resp = await client.post(
@@ -257,6 +321,3 @@ def _extract_json(content: Any) -> dict[str, Any] | None:
             return None
 
     return parsed if isinstance(parsed, dict) else None
-
-
-import re  # noqa: E402  (放在末尾避免与上面 dataclass 定义顺序冲突)

@@ -51,16 +51,28 @@ pytest                                            # 133 个测试
 uvicorn gateway.app:app --port 8000               # Fake Provider，零网络
 ```
 
-接你自己的 OpenAI 兼容端点：
+接你自己的 OpenAI 兼容端点（`base_url` 带不带 `/v1` 都可以）：
 
 ```bash
-export KANJIAN_OPENAI_BASE_URL="https://your-endpoint.example"
-export KANJIAN_OPENAI_API_KEY="sk-..."
-export KANJIAN_OPENAI_MODEL="your-model"
+export OPENAI_BASE_URL="https://your-endpoint.example/v1"
+export OPENAI_API_KEY="sk-..."
+export KANJIAN_OPENAI_MODEL="your-vision-model"   # 可省略：会从端点 /v1/models 自动挑支持图像的模型
 uvicorn gateway.app:app --port 8000
 ```
 
+也可以写在仓库根的 `.env` 里（已被 `.gitignore` 忽略，不会进仓库），见 [.env.example](.env.example)。
+
 API：`POST /v1/scene:describe`（multipart：metadata JSON + JPEG 图像）· `GET /v1/health` · `GET /v1/capabilities` · `GET /v1/usage`。契约 Schema 见 [schemas/](schemas/)。
+
+### 验证真实链路
+
+```bash
+python scripts/smoke_provider.py          # 端到端：图 → 模型 → Schema → 策略 → 播报
+python scripts/bench_latency.py --runs 5  # 分辨率/延迟基准
+python scripts/live_injection_test.py     # 真实提示注入对抗
+```
+
+实测数字见 [docs/BENCHMARKS.md](docs/BENCHMARKS.md)。**当前参考模型延迟未达 P50≤2.0s 目标，偏差已如实记录。**
 
 ## 当前状态
 

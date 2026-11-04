@@ -262,12 +262,23 @@ def test_unknown_tokens_not_counted_as_zero(client: TestClient) -> None:
 # 无默认端点（ADR-07）
 # ---------------------------------------------------------------------------
 
-def test_no_default_endpoint() -> None:
-    """未配置环境变量时必须退回 Fake，绝不连接某个默认端点。"""
-    import os
+def test_no_default_endpoint(monkeypatch) -> None:
+    """未配置环境变量时必须退回 Fake，绝不连接某个默认端点。
 
-    for key in ("KANJIAN_OPENAI_BASE_URL", "KANJIAN_OPENAI_API_KEY", "KANJIAN_OPENAI_MODEL"):
-        os.environ.pop(key, None)
+    注意：gateway.app 在导入时会加载仓库根的 .env（本地开发便利）。
+    因此本测试必须清掉**全部**相关变量，否则在开发者机器上会因为
+    .env 存在而误判。这是一条"测试环境自洽"的要求，不是宽容处理。
+    """
+    for key in (
+        "KANJIAN_OPENAI_BASE_URL",
+        "KANJIAN_OPENAI_API_KEY",
+        "KANJIAN_OPENAI_MODEL",
+        "KANJIAN_MODEL",
+        "OPENAI_BASE_URL",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
     app = create_app()
     assert isinstance(app.state.provider, FakeVlmProvider)
     assert app.state.provider.capabilities.name == "fake"

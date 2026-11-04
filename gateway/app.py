@@ -18,10 +18,25 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+# 本地开发便利：若仓库根有 .env 则加载（.env 已在 .gitignore 中）。
+# 缺失时静默跳过，不影响纯环境变量或 CI 运行。
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+except ImportError:  # pragma: no cover - dotenv 是可选依赖
+    pass
+
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from .providers import FakeVlmProvider, OpenAICompatProvider, ProviderError, VlmProvider
+from .providers import (
+    FakeVlmProvider,
+    OpenAICompatProvider,
+    ProviderError,
+    VlmProvider,
+    discover_vision_model,
+)
 
 SCHEMAS_DIR = Path(__file__).resolve().parents[1] / "schemas"
 MAX_REQUEST_BYTES = 2 * 1024 * 1024  # 2 MiB（TDD §5）
@@ -224,14 +239,45 @@ def _default_provider() -> VlmProvider:
 
     未配置时退回 Fake，并在 health 中如实报告 provider_name=fake——
     绝不静默连接到某个维护者端点。
-    """
-    base_url = os.environ.get("KANJIAN_OPENAI_BASE_URL", "").strip()
-    api_key = os.environ.get("KANJIAN_OPENAI_API_KEY", "").strip()
-    model = os.environ.get("KANJIAN_OPENAI_MODEL", "").strip()
 
-    if base_url and api_key and model:
-        return OpenAICompatProvider(base_url=base_url, api_key=api_key, model=model)
-    return FakeVlmProvider()
+    环境变量优先级：KANJIAN_OPENAI_* 覆盖行业通用的 OPENAI_*。
+    模型名可省略，此时从端点自己的 /v1/models 里挑第一个支持图像输入的模型。
+    """
+    base_url = (
+        os.environ.get("KANJIAN_OPENAI_BASE_URL", "").strip()
+        or os.environ.get("OPENAI_BASE_URL", "").strip()
+    )
+    api_key = (
+        os.environ.get("KANJIAN_OPENAI_API_KEY", "").strip()
+        or os.environ.get("OPENAI_API_KEY", "").strip()
+    )
+    model = (
+        os.environ.get("KANJIAN_OPENAI_MODEL", "").strip()
+        or os.environ.get("KANJIAN_MODEL", "").strip()
+    )
+
+    if not (base_url and api_key):
+        return FakeVlmProvider()
+
+    if not model:
+        try:
+            model = discover_vision_model(base_url, api_key)
+        except ProviderError as exc:
+            # 发现失败时明确退化到 Fake，并在日志里说明原因，不静默联网到别处。
+            print(f"[kanjian] 无法自动发现模型（{exc.message}），退回 Fake Provider")
+            return FakeVlmProvider()
+
+    # 超时默认保持 ADR-01 的 6.0s 预算。**不要为了"跑通"把它调大**：
+    # 若端点实际更慢，正确做法是换模型/减少输出长度，并在报告里记录偏差。
+    timeout_s = float(os.environ.get("KANJIAN_REQUEST_TIMEOUT_S", "6.0"))
+    max_tokens = int(os.environ.get("KANJIAN_MAX_TOKENS", "700"))
+    return OpenAICompatProvider(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        timeout_s=timeout_s,
+        max_tokens=max_tokens,
+    )
 
 
 app = create_app()
