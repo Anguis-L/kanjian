@@ -19,6 +19,7 @@ import java.util.UUID
 class SpeechOutput(
     private val onReady: () -> Unit,
     private val onFinished: () -> Unit,
+    private val onUnavailable: () -> Unit = {},
 ) : TextToSpeech.OnInitListener {
 
     private var tts: TextToSpeech? = null
@@ -49,7 +50,12 @@ class SpeechOutput(
                     }
                 })
             }
-            if (ready) onReady()
+            if (ready) onReady() else onUnavailable()
+        } else {
+            // 初始化失败（无 TTS 引擎/被禁用）：必须让用户知道，
+            // 否则盲人用户会以为"按了没反应"。
+            ready = false
+            onUnavailable()
         }
     }
 

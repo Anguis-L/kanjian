@@ -259,6 +259,51 @@ def test_unknown_tokens_not_counted_as_zero(client: TestClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# request_id 权威性（SDD §7）
+# ---------------------------------------------------------------------------
+
+def test_request_id_comes_from_request_not_provider() -> None:
+    """Provider 自造 request_id 时，网关必须用请求侧的，而不是回显 Provider 的。
+
+    真实踩到过：模型返回 `scene-0001-blank`，网关原样记录，
+    导致端侧无法把结果和请求对上（迟到结果隔离就失效了）。
+    """
+    provider = FakeVlmProvider(
+        response={
+            "schema_version": "1.0",
+            "request_id": "provider-invented-id",
+            "scene_summary": "走廊",
+            "objects": [],
+            "text_regions": [],
+            "uncertainties": [],
+            "image_quality": "good",
+            "speech_candidate": "像是一条走廊。",
+            "provider": {"name": "fake"},
+        }
+    )
+    client = TestClient(create_app(provider))
+    r = client.post(
+        "/v1/scene:describe",
+        data={"metadata": json.dumps(VALID_META)},
+        files={"image": ("frame.jpg", io.BytesIO(_jpeg_bytes()), "image/jpeg")},
+    )
+    assert r.status_code == 200
+    assert r.json()["request_id"] == VALID_META["request_id"]
+
+
+def test_usage_log_uses_request_id() -> None:
+    """用量记录必须用请求侧 request_id，便于按请求追溯。"""
+    client = TestClient(create_app(FakeVlmProvider()))
+    client.post(
+        "/v1/scene:describe",
+        data={"metadata": json.dumps(VALID_META)},
+        files={"image": ("frame.jpg", io.BytesIO(_jpeg_bytes()), "image/jpeg")},
+    )
+    items = client.get("/v1/usage").json()["items"]
+    assert items[0]["request_id"] == VALID_META["request_id"]
+
+
+# ---------------------------------------------------------------------------
 # 无默认端点（ADR-07）
 # ---------------------------------------------------------------------------
 

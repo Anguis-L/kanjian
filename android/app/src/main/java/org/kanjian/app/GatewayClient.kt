@@ -24,6 +24,7 @@ class GatewayClient(private val baseUrl: String) {
     }
 
     data class SceneResult(
+        val requestId: String,
         val sceneSummary: String,
         val speechCandidate: String,
         val objects: List<RecognizedObject>,
@@ -71,7 +72,10 @@ class GatewayClient(private val baseUrl: String) {
             conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 3_000
-                readTimeout = 15_000
+                // 客户端超时必须**大于**网关的总超时预算（ADR-01：默认 6s），
+                // 否则客户端先断，就拿不到网关返回的具体错误码（超时/限流/5xx），
+                // 只能笼统地说"超时"。这里留足余量。
+                readTimeout = 20_000
                 doOutput = true
                 setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
             }
@@ -95,7 +99,16 @@ class GatewayClient(private val baseUrl: String) {
             val code = conn.responseCode
             if (code == 200) {
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
-                Outcome.Success(parse(body))
+                val parsed = parse(body)
+                // 端侧必须校验 request_id 回到自己发出的那个（SDD §7）。
+                // 不匹配说明结果串了/被替换，宁可拒绝也不播报。
+                if (parsed.requestId != requestId) {
+                    return Outcome.Failure(
+                        "REQUEST_ID_MISMATCH",
+                        "识别结果与请求不匹配，已忽略"
+                    )
+                }
+                Outcome.Success(parsed)
             } else {
                 val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
                 mapError(code, err)
@@ -154,6 +167,7 @@ class GatewayClient(private val baseUrl: String) {
             for (i in 0 until arr.length()) uncertainties.add(arr.optString(i))
         }
         return SceneResult(
+            requestId = json.optString("request_id"),
             sceneSummary = json.optString("scene_summary"),
             speechCandidate = json.optString("speech_candidate"),
             objects = objects,

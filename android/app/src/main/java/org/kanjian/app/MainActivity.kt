@@ -83,6 +83,14 @@ class MainActivity : AppCompatActivity() {
             },
             onFinished = {
                 runOnUiThread { setStatus(getString(R.string.status_idle)) }
+            },
+            onUnavailable = {
+                // 语音不可用时，状态文本是唯一的输出通道；
+                // accessibilityLiveRegion=polite 让 TalkBack 仍能读出来（FR-ACC-002）。
+                runOnUiThread {
+                    setStatus(getString(R.string.tts_unavailable))
+                    toast(getString(R.string.tts_unavailable))
+                }
             }
         ).also { s ->
             val engine = TextToSpeech(this) { status ->
@@ -197,7 +205,7 @@ class MainActivity : AppCompatActivity() {
         when (outcome) {
             is GatewayClient.Outcome.Failure -> {
                 // 失败必须可感知，不能静默编造（PRD §2）
-                setStatus(outcome.message)
+                display(outcome.message)
                 speak(outcome.message)
             }
 
@@ -206,11 +214,20 @@ class MainActivity : AppCompatActivity() {
                 // ADR-02：端侧是最终防线。网关已过滤过一遍，这里再过一遍。
                 val policy = OutputPolicy.check(result.speechCandidate, maxChars = 40)
                 val toSpeak = policy.text
-                setStatus(toSpeak)
+                display(toSpeak)
                 speak(toSpeak)
                 lastSpoken = toSpeak
             }
         }
+    }
+
+    /**
+     * 把文本放到状态栏。若语音不可用，附加明确标记——
+     * 否则盲人用户会以为"按了没反应"，而实际上文字已经出来了。
+     */
+    private fun display(text: String) {
+        val suffix = if (speech?.isReady == true) "" else "〔语音不可用，仅屏幕显示〕"
+        setStatus(if (suffix.isEmpty()) text else "$text $suffix")
     }
 
     // ---------------------------------------------------------------- 工具
@@ -218,9 +235,12 @@ class MainActivity : AppCompatActivity() {
     private fun speak(text: String) {
         val ok = speech?.speak(text) ?: false
         if (!ok) {
-            toast("语音未就绪")
+            // 不静默失败：文字已在状态栏，明确告知语音通道缺失
+            toast(getString(R.string.tts_unavailable))
         } else {
             setStatus(getString(R.string.status_speaking))
+            // 播报结束后状态栏保留刚才那句话，便于重复播放与屏幕确认
+            statusView.postDelayed({ setStatus(text) }, 800)
         }
     }
 

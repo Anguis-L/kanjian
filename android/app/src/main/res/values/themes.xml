@@ -1,22 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  配色原则：目标用户是低视力者，对比度优先于美观。
+  采用浅底深字 + 深绿高对比主色（白字绿底约 8:1，远高于 WCAG AA 的 4.5:1）。
+  之前用 DayNight + 深色底时，按钮呈灰底灰字、对话框按钮深绿压深灰，
+  在真机上几乎看不清——这是本轮真机测试发现并修掉的问题。
+-->
 <resources>
-    <style name="Theme.Kanjian" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <style name="Theme.Kanjian" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="colorPrimary">#1B5E20</item>
         <item name="colorPrimaryDark">#0B3D12</item>
-        <item name="colorAccent">#2E7D32</item>
-        <item name="android:windowBackground">#121212</item>
+        <item name="colorAccent">#1B5E20</item>
+        <item name="android:windowBackground">#FFFFFF</item>
+        <item name="android:textColorPrimary">#000000</item>
+        <item name="android:textColorSecondary">#1A1A1A</item>
     </style>
 
-    <!-- 大字号、高对比：目标用户是视障者，界面首先服务于可读性与可触达 -->
     <style name="Kanjian.Button" parent="Widget.AppCompat.Button">
         <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
         <item name="android:minHeight">72dp</item>
         <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="backgroundTint">#1B5E20</item>
     </style>
 
     <style name="Kanjian.Status" parent="">
         <item name="android:textSize">20sp</item>
-        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textColor">#000000</item>
+        <item name="android:background">#EDEDED</item>
         <item name="android:padding">16dp</item>
     </style>
 </resources>

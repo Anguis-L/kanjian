@@ -28,4 +28,5 @@
     <string name="err_timeout">识别超时，可重试</string>
     <string name="err_service">服务暂不可用</string>
     <string name="err_camera">相机不可用</string>
+    <string name="tts_unavailable">系统语音不可用（未安装中文语音引擎），描述只显示在屏幕上</string>
 </resources>

@@ -147,7 +147,10 @@ def create_app(provider: VlmProvider | None = None) -> FastAPI:
 
         # --- 结果 Schema 校验（TDD §7：不合法返回 PROVIDER_BAD_RESPONSE）---
         raw.setdefault("schema_version", "1.0")
-        raw.setdefault("request_id", meta.get("request_id", request_id))
+        # request_id 以**请求侧**为准：Provider 可能自己编一个、不回显，
+        # 那样端侧就无法把结果和请求对上（SDD §7 要求端侧校验 request_id）。
+        # 这里强制覆盖，而不是 setdefault——不能让 Provider 决定身份。
+        raw["request_id"] = meta["request_id"]
         result_validator = jsonschema.Draft202012Validator(app.state.result_schema)
         if list(result_validator.iter_errors(raw)):
             first = next(result_validator.iter_errors(raw))
@@ -166,7 +169,7 @@ def create_app(provider: VlmProvider | None = None) -> FastAPI:
         # --- 用量记录（不含图像、不含提示词）---
         app.state.usage_log.append(
             {
-                "request_id": raw["request_id"],
+                "request_id": meta["request_id"],
                 "origin": meta["origin"],
                 "mode": meta["mode"],
                 "image_bytes": len(data),
