@@ -60,6 +60,19 @@ uvicorn gateway.app:app --host 0.0.0.0 --port 8000
 
 未配置时，点「询问前方」会直接弹出设置对话框，不会尝试任何默认地址。
 
+**不在同一 Wi-Fi 时**：如果两端都在同一个 Tailscale（或同类 overlay 网络）里，
+直接填电脑的 Tailscale IP + 网关端口即可，不必同网段：
+
+```
+http://<电脑的 Tailscale IP>:8000
+```
+
+注意填的是**网关端口（默认 8000）**，不是推理服务的端口——
+App 走的是本项目的 `/v1/scene:describe` 协议，不是 OpenAI 的 `/v1/chat/completions`。
+
+> 若你的推理服务（如 magpie）把 API key 限制为仅本机回环可用，
+> 网关应连接 `127.0.0.1:<port>`，不要把网关的上游指到外层网卡地址。
+
 ### 方式二：构建时注入（开发调试）
 
 ```bash
