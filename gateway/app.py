@@ -30,6 +30,7 @@ except ImportError:  # pragma: no cover - dotenv 是可选依赖
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
+from .adapters import adapt_scene_result, has_speakable_text
 from .providers import (
     FakeVlmProvider,
     OpenAICompatProvider,
@@ -134,23 +135,59 @@ def create_app(provider: VlmProvider | None = None) -> FastAPI:
         if not _looks_like_jpeg(data):
             return _error("UNSUPPORTED_IMAGE", "仅支持 JPEG", request_id, status=415)
 
-        # --- Provider 调用 ---
+        # --- Provider 调用 + 输出适配 ---
+        # 实测：同一个模型偶尔会返回"结构合规但缺 speech_candidate"的部分结果。
+        # 这属于抖动而不是内容问题，按 TDD §12「手动请求可有限重试一次」重试；
+        # 自动请求不立即重试（省成本，也避免自动模式放大波动）。
         provider_meta = dict(meta)
         provider_meta["_result_schema"] = app.state.result_schema
         provider_meta.setdefault("request_id", request_id)
 
-        try:
-            raw = await app.state.provider.describe(image_bytes=data, metadata=provider_meta)
-        except ProviderError as exc:
-            return _error(exc.code, exc.message, request_id, status=_status_for(exc.code),
-                          retryable=exc.retryable)
+        max_attempts = 2 if meta["origin"] == "USER" else 1
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                raw = await app.state.provider.describe(image_bytes=data, metadata=provider_meta)
+            except ProviderError as exc:
+                return _error(exc.code, exc.message, request_id, status=_status_for(exc.code),
+                              retryable=exc.retryable)
 
-        # --- 结果 Schema 校验（TDD §7：不合法返回 PROVIDER_BAD_RESPONSE）---
-        raw.setdefault("schema_version", "1.0")
-        # request_id 以**请求侧**为准：Provider 可能自己编一个、不回显，
-        # 那样端侧就无法把结果和请求对上（SDD §7 要求端侧校验 request_id）。
-        # 这里强制覆盖，而不是 setdefault——不能让 Provider 决定身份。
-        raw["request_id"] = meta["request_id"]
+            # --- Provider 输出适配（TDD §7）---
+            # 多数模型会无视 response_format 返回自己的形状，网关负责转换。
+            # 只做字段改名与清洗，不编造内容；适配后仍须过 Schema 与端侧策略。
+            adapted = adapt_scene_result(raw)
+            if adapted.rejected:
+                # 越界字段**不重试也不清洗**：它说明模型在做安全结论，
+                # 必须失败并记录，否则永远发现不了这个问题。
+                return _error("PROVIDER_BAD_RESPONSE", adapted.rejected, request_id, status=502)
+
+            candidate = adapted.data
+            candidate["schema_version"] = "1.0"
+            # request_id 以**请求侧**为准：Provider 可能自己编一个、不回显，
+            # 那样端侧就无法把结果和请求对上（SDD §7 要求端侧校验 request_id）。
+            # 这里强制覆盖，而不是 setdefault——不能让 Provider 决定身份。
+            candidate["request_id"] = meta["request_id"]
+            # provider 是**事实性元数据**，不是模型的自述：模型没给就由网关按实际
+            # Provider 填写，这样"到底是谁答的"始终有据可查。
+            if not isinstance(candidate.get("provider"), dict) or not candidate["provider"].get("name"):
+                candidate["provider"] = {"name": app.state.provider.capabilities.name}
+
+            if has_speakable_text(candidate):
+                raw = candidate
+                break
+
+            if attempts >= max_attempts:
+                # 不替模型拼一句话——那等于我们自己在编造场景描述。
+                # 带上收到的字段名（不含内容），便于排查是哪种形状没被适配。
+                got = ", ".join(sorted(candidate)) or "（空）"
+                return _error(
+                    "PROVIDER_BAD_RESPONSE",
+                    f"Provider 未返回可播报的描述文本（尝试 {attempts} 次，收到字段: {got}）",
+                    request_id,
+                    status=502,
+                )
+
         result_validator = jsonschema.Draft202012Validator(app.state.result_schema)
         if list(result_validator.iter_errors(raw)):
             first = next(result_validator.iter_errors(raw))
@@ -178,6 +215,10 @@ def create_app(provider: VlmProvider | None = None) -> FastAPI:
                 "output_tokens": raw["usage"].get("output_tokens"),
                 "tokens_known": raw["usage"].get("input_tokens") is not None,
                 "policy_version": meta["policy_version"],
+                # 适配记录：哪些请求需要网关改名，说明该模型不守结构化契约
+                "adapted": adapted.adapted,
+                "adapt_notes": adapted.notes,
+                "attempts": attempts,
             }
         )
 

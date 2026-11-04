@@ -176,9 +176,14 @@ def test_provider_error_mapped(code: str, expected_status: int, retryable: bool)
     assert body["error"]["request_id"]
 
 
-def test_provider_bad_schema_rejected() -> None:
-    """Provider 返回不符合 Schema 的结果 → PROVIDER_BAD_RESPONSE，不直接播报。"""
-    bad = FakeVlmProvider(
+def test_provider_bad_enum_is_normalized_not_rejected() -> None:
+    """非法枚举按 SDD §7.2 做白名单映射，而不是整条拒绝。
+
+    文档规定 Normalizer 的职责就是"方位仅 front/front_left/... 白名单映射"，
+    所以 zone="north" 应归一为 unknown，用户仍能拿到描述。
+    前提是文本本身没问题——安全过滤在端侧照跑。
+    """
+    provider = FakeVlmProvider(
         response={
             "schema_version": "1.0",
             "request_id": "x",
@@ -191,7 +196,32 @@ def test_provider_bad_schema_rejected() -> None:
             "provider": {"name": "fake"},
         }
     )
-    client = TestClient(create_app(bad))
+    client = TestClient(create_app(provider))
+    r = client.post(
+        "/v1/scene:describe",
+        data={"metadata": json.dumps(VALID_META)},
+        files={"image": ("frame.jpg", io.BytesIO(_jpeg_bytes()), "image/jpeg")},
+    )
+    assert r.status_code == 200
+    assert r.json()["objects"][0]["zone"] == "unknown"
+
+
+def test_provider_output_without_speakable_text_rejected() -> None:
+    """没有可播报文本 → 502。**网关不替模型拼一句话**：
+    那等于我们自己在编造场景描述。"""
+    provider = FakeVlmProvider(
+        response={
+            "schema_version": "1.0",
+            "request_id": "x",
+            "scene_summary": "走廊",
+            "objects": [],
+            "text_regions": [],
+            "uncertainties": [],
+            "image_quality": "good",
+            "provider": {"name": "fake"},
+        }
+    )
+    client = TestClient(create_app(provider))
     r = client.post(
         "/v1/scene:describe",
         data={"metadata": json.dumps(VALID_META)},
@@ -201,9 +231,27 @@ def test_provider_bad_schema_rejected() -> None:
     assert r.json()["error"]["code"] == "PROVIDER_BAD_RESPONSE"
 
 
-def test_provider_dangerous_field_rejected() -> None:
-    """Provider 输出带 safe_to_walk 字段 → Schema 拒绝。"""
-    bad = FakeVlmProvider(
+def test_provider_shape_with_speech_alias_accepted() -> None:
+    """实测多数模型返回 {"scene":..,"speech":..}——适配后应当可用。"""
+    provider = FakeVlmProvider(
+        response={"scene": "像是走廊", "speech": "正前方有一把椅子。", "confidence": 0.8}
+    )
+    client = TestClient(create_app(provider))
+    r = client.post(
+        "/v1/scene:describe",
+        data={"metadata": json.dumps(VALID_META)},
+        files={"image": ("frame.jpg", io.BytesIO(_jpeg_bytes()), "image/jpeg")},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["speech_candidate"] == "正前方有一把椅子。"
+
+
+def test_dangerous_field_is_not_silently_scrubbed() -> None:
+    """危险字段必须响亮失败，不能被适配层悄悄剥掉。
+
+    剥掉虽然能让请求"成功"，但我们就永远不知道模型在输出安全结论。
+    """
+    provider = FakeVlmProvider(
         response={
             "schema_version": "1.0",
             "request_id": "x",
@@ -212,18 +260,19 @@ def test_provider_dangerous_field_rejected() -> None:
             "text_regions": [],
             "uncertainties": [],
             "image_quality": "good",
-            "speech_candidate": "可以走。",
+            "speech_candidate": "前方有椅子。",
             "provider": {"name": "fake"},
             "safe_to_walk": True,
         }
     )
-    client = TestClient(create_app(bad))
+    client = TestClient(create_app(provider))
     r = client.post(
         "/v1/scene:describe",
         data={"metadata": json.dumps(VALID_META)},
         files={"image": ("frame.jpg", io.BytesIO(_jpeg_bytes()), "image/jpeg")},
     )
     assert r.status_code == 502
+    assert "safe_to_walk" in r.json()["error"]["message"]
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +350,100 @@ def test_usage_log_uses_request_id() -> None:
     )
     items = client.get("/v1/usage").json()["items"]
     assert items[0]["request_id"] == VALID_META["request_id"]
+
+
+class _FlakyProvider:
+    """前 N 次返回"缺 speech_candidate"的部分结果，之后正常。
+
+    实测依据：同一模型偶尔会只给 objects/scene_summary 而不给可播报文本。
+    """
+
+    def __init__(self, fail_times: int) -> None:
+        self.fail_times = fail_times
+        self.calls = 0
+
+    @property
+    def capabilities(self):
+        return FakeVlmProvider().capabilities
+
+    async def describe(self, *, image_bytes, metadata):
+        self.calls += 1
+        base = {
+            "schema_version": "1.0",
+            "request_id": metadata.get("request_id", "x"),
+            "scene_summary": "走廊",
+            "objects": [],
+            "text_regions": [],
+            "uncertainties": [],
+            "image_quality": "acceptable",
+            "provider": {"name": "fake"},
+        }
+        if self.calls <= self.fail_times:
+            return dict(base)  # 缺 speech_candidate
+        base["speech_candidate"] = "正前方有一把椅子。"
+        return base
+
+
+def _post(client: TestClient, origin: str = "USER"):
+    meta = dict(VALID_META)
+    meta["origin"] = origin
+    return client.post(
+        "/v1/scene:describe",
+        data={"metadata": json.dumps(meta)},
+        files={"image": ("frame.jpg", io.BytesIO(_jpeg_bytes()), "image/jpeg")},
+    )
+
+
+def test_user_request_retries_once_on_missing_speech() -> None:
+    """手动请求：缺可播报文本时重试一次（TDD §12）。"""
+    provider = _FlakyProvider(fail_times=1)
+    client = TestClient(create_app(provider))
+    r = _post(client, "USER")
+    assert r.status_code == 200, r.text
+    assert r.json()["speech_candidate"] == "正前方有一把椅子。"
+    assert provider.calls == 2
+
+
+def test_user_request_fails_after_retry() -> None:
+    """重试仍失败 → 502，且**不编造**文本。"""
+    provider = _FlakyProvider(fail_times=99)
+    client = TestClient(create_app(provider))
+    r = _post(client, "USER")
+    assert r.status_code == 502
+    assert provider.calls == 2
+    assert "尝试 2 次" in r.json()["error"]["message"]
+
+
+def test_auto_request_does_not_retry() -> None:
+    """自动请求不立即重试：省成本，也避免自动模式放大模型波动。"""
+    provider = _FlakyProvider(fail_times=99)
+    client = TestClient(create_app(provider))
+    r = _post(client, "AUTO")
+    assert r.status_code == 502
+    assert provider.calls == 1
+
+
+def test_dangerous_field_not_retried() -> None:
+    """越界字段不重试：它不是抖动，是模型在做安全结论，必须被看见。"""
+
+    class _Dangerous:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        @property
+        def capabilities(self):
+            return FakeVlmProvider().capabilities
+
+        async def describe(self, *, image_bytes, metadata):
+            self.calls += 1
+            return {"speech": "有东西。", "safe_to_walk": True}
+
+    p = _Dangerous()
+    client = TestClient(create_app(p))
+    r = _post(client, "USER")
+    assert r.status_code == 502
+    assert p.calls == 1, "越界输出不应被重试掩盖"
+    assert "safe_to_walk" in r.json()["error"]["message"]
 
 
 # ---------------------------------------------------------------------------

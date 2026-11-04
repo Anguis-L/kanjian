@@ -5,6 +5,51 @@
 >
 > 按 TEST §4 的口径：P50/P95 只统计**成功样本**，失败/超时单列。
 
+## 2026-11-04 · 模型契约遵从性（新增）
+
+用 `scripts/check_models.py` 对同一端点测各模型是否**真的**遵守
+`response_format: json_schema`（每次 2 轮，图相同）：
+
+| 模型 | 通过 | P50 | 实际返回 |
+|---|---:|---:|---|
+| `auto/deepseek-v4.1-flash` | 0/2 | 7.55s | 不是合法 JSON |
+| `workbuddy/deepseek-v4.1-flash` | 0/2 | **2.12s** | 多出 `description`,`speech` |
+| `trae-cn/deepseek-v4.1-flash` | 0/2 | 8.53s | 多出 `speech` |
+| `workbuddy/glm-5.3-flash` | 0/2 | 3.08s | 多出 `description`,`speech` |
+| `loomy/DeepSeek-V4.1-Flash` | **2/2** | 6.51s | 符合契约 |
+| `opendesign/deepseek-v4.1-flash` | — | — | HTTP 402 需付费 |
+| `raccoon/sn-deepseek-v4-1-flash-1017` | — | — | HTTP 429 限流 |
+
+**结论：这个路由上绝大多数模型不遵守 `response_format`。** 只认"完美模型"
+会让产品不可用——所以加了 `gateway/adapters.py` 做字段映射（TDD §7 明确允许）。
+
+### 适配层的边界（必须守住）
+
+- 只做**字段改名**（`speech`→`speech_candidate`、`scene`/`description`→`scene_summary`），不编造内容
+- `objects` 缺失填 `[]`，并记 notes 说明"**不代表没有物体**"
+- `image_quality` 缺失填 `unknown`，**绝不填 good**（那是凭空暗示画质合格）
+- 缺少可播报文本 → **失败**，不替模型拼一句话
+- **越界字段（`safe_to_walk`/`distance_m`/`risk_level` 等）不静默清洗**，
+  而是让整次识别失败并记录——剥掉虽然"安全"，但会让我们永远发现不了
+  模型正在输出安全结论
+
+### 重试：把抖动与越界分开对待
+
+实测同一模型偶尔返回"结构合规但缺 `speech_candidate`"的部分结果。
+
+| 情形 | 处理 | 理由 |
+|---|---|---|
+| 缺可播报文本（USER） | 重试 1 次（共 2 次） | 抖动，不是内容问题；TDD §12 允许手动有限重试 |
+| 缺可播报文本（AUTO） | 不重试 | 省成本，避免自动模式放大波动 |
+| 越界字段 | **不重试** | 不是抖动，是模型在做安全结论，必须被看见 |
+
+实测成功率：~~3/5~~ → **5/6**（`workbuddy/deepseek-v4.1-flash`，延迟 2.7–4.9s）。
+
+### 延迟更新
+
+换到 `workbuddy/deepseek-v4.1-flash` 后：**2.7–4.9s**（此前 `auto/*` 为 2.3–5.9s
+且波动更大）。仍未达到 P50 ≤ 2.0s，但已是当前路由上较优的可用点。
+
 ## 2026-11-04 · 真实 Provider 首测
 
 ### 测试条件（必须随数字一起引用）
